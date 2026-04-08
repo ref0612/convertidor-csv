@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Convertidor CSV a Excel</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Transformar CSV a Excel</h1>
+        <p>Sube tu archivo CSV. Puedes generar una vista previa de los datos limpios antes de descargar el archivo Excel (.xlsx).</p>
+        
+        <div class="upload-area">
+            <input type="file" id="csvFileInput" accept=".csv" />
+            <div class="button-group">
+                <button id="previewBtn" class="btn-secondary">Vista Previa</button>
+                <button id="convertBtn" class="btn-primary">Convertir y Descargar</button>
+            </div>
+        </div>
+
+        <div id="statusMessage" class="status hidden"></div>
+
+        <div id="previewContainer" class="hidden">
+            <div class="table-wrapper">
+                <table id="previewTable"></table>
+            </div>
+            <button id="downloadPreviewBtn" class="btn-primary">Descargar Excel Completo</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

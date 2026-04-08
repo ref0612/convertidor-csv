@@ -1,0 +1,136 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background-color: #000000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container {
+    background-color: white;
+    padding: 40px;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    width: 100%;
+    max-width: 1900px; /* Ensanchado para la tabla */
+    text-align: center;
+}
+
+h1 {
+    color: #2c3e50;
+    margin-bottom: 15px;
+}
+
+p {
+    color: #7f8c8d;
+    margin-bottom: 25px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.upload-area {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+input[type="file"] {
+    padding: 10px;
+    border: 1px dashed #bdc3c7;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+    cursor: pointer;
+}
+
+.button-group {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+button {
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    font-size: 16px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+button:disabled {
+    background-color: #95a5a6 !important;
+    cursor: not-allowed;
+}
+
+.btn-primary { background-color: #27ae60; }
+.btn-primary:hover { background-color: #219653; }
+
+.btn-secondary { background-color: #34495e; }
+.btn-secondary:hover { background-color: #2c3e50; }
+
+.status {
+    margin-top: 20px;
+    padding: 10px;
+    border-radius: 5px;
+    font-weight: bold;
+}
+
+.status.hidden, #previewContainer.hidden {
+    display: none;
+}
+
+.status.success { background-color: #d4edda; color: #155724; }
+.status.error { background-color: #f8d7da; color: #721c24; }
+
+/* Estilos de la tabla de Vista Previa */
+#previewContainer {
+    margin-top: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.table-wrapper {
+    max-height: 350px;
+    overflow: auto;
+    border: 1px solid #bdc3c7;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    border: 1px solid #ecf0f1;
+    padding: 8px 12px;
+    text-align: left;
+    white-space: nowrap; /* Evita que el texto se apile hacia abajo */
+    font-size: 13px;
+}
+
+th {
+    background-color: #2c3e50;
+    color: white;
+    position: sticky;
+    top: 0; /* Encabezado fijo al hacer scroll */
+    z-index: 1;
+}
+
+caption {
+    caption-side: bottom;
+    padding: 10px;
+    color: #7f8c8d;
+    font-size: 12px;
+}
