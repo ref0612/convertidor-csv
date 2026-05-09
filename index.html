@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DataForge — Enterprise Consolidator Suite</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Dependencies (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+</head>
+<body>
+
+  <!-- ── TOP BAR ── -->
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-logo">DataForge</span>
+      <span class="brand-sub">Enterprise Consolidator Suite</span>
+    </div>
+    <span class="version-badge">v2.0</span>
+  </div>
+
+  <!-- ── TAB NAV ── -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="tab-csv">
+      <span class="tab-dot"></span>
+      <span>Consolidador CSV / XLSX</span>
+    </button>
+    <button class="tab-btn" data-tab="tab-json">
+      <span class="tab-dot"></span>
+      <span>JSON → Excel</span>
+    </button>
+  </nav>
+
+  <!-- ════════════════════════════════════════
+       TAB 1 — CSV / XLSX CONSOLIDATOR
+  ════════════════════════════════════════ -->
+  <div class="main tab-panel active" id="tab-csv">
+
+    <!-- 01 · INGESTA -->
+    <div class="section-label">01 — Ingesta de datos</div>
+
+    <div class="dropzone" id="dropZone">
+      <input type="file" id="fileInput" multiple>
+      <div class="dz-icon">⬡</div>
+      <div class="dz-title">Arrastra archivos o haz clic para seleccionar</div>
+      <div class="dz-sub">
+        Todos los archivos deben compartir la misma estructura de columnas.<br>
+        Soporta múltiples fragmentos del mismo período.
+      </div>
+      <div class="dz-formats">
+        <span class="fmt-pill">CSV</span>
+        <span class="fmt-pill">TSV</span>
+        <span class="fmt-pill">TXT</span>
+        <span class="fmt-pill">XLSX</span>
+      </div>
+    </div>
+
+    <div class="file-list" id="fileList"></div>
+
+    <!-- 02 · CONFIGURACIÓN -->
+    <hr class="divider">
+    <div class="section-label">02 — Configuración del motor</div>
+
+    <div class="settings-grid">
+      <div class="setting-card">
+        <div class="setting-head">
+          <span class="setting-name">Orden cronológico</span>
+          <label class="toggle">
+            <input type="checkbox" id="toggleChron" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-desc">Ordena todas las filas por fecha/hora detectadas automáticamente.</div>
+      </div>
+      <div class="setting-card">
+        <div class="setting-head">
+          <span class="setting-name">Formato contable</span>
+          <label class="toggle">
+            <input type="checkbox" id="toggleAcct" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-desc">Detecta columnas monetarias y aplica formato <code style="font-size:.7rem">$#,##0</code> automáticamente.</div>
+      </div>
+      <div class="setting-card">
+        <div class="setting-head">
+          <span class="setting-name">Filtrar filas de totales</span>
+          <label class="toggle">
+            <input type="checkbox" id="toggleFilter" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-desc">Elimina filas con subtotales o la palabra "total" al final del archivo.</div>
+      </div>
+      <div class="setting-card">
+        <div class="setting-head">
+          <span class="setting-name">Panel inmovilizado</span>
+          <label class="toggle">
+            <input type="checkbox" id="toggleFreeze" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-desc">Congela la primera fila de encabezados en el Excel resultante.</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Tema de tabla</label>
+        <select id="tableTheme">
+          <option value="TableStyleMedium2">Corp Azul (Medium 2)</option>
+          <option value="TableStyleMedium9">Corp Verde (Medium 9)</option>
+          <option value="TableStyleMedium15">Corp Naranja (Medium 15)</option>
+          <option value="TableStyleDark1">Dark 1 — Oscuro</option>
+          <option value="TableStyleLight1">Light 1 — Limpio</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Nombre del archivo</label>
+        <input type="text" id="outputName" placeholder="Consolidado_Maestro" value="Nuevo_Archivo">
+      </div>
+    </div>
+
+    <!-- 03 · PIPELINE -->
+    <hr class="divider">
+    <div class="section-label">03 — Pipeline de procesamiento</div>
+
+    <div class="pipeline" id="pipeline">
+      <div class="step" id="step-read">
+        <span class="step-num">01</span>
+        <span class="step-icon">📂</span>
+        <span class="step-label">Lectura &amp; Parseo</span>
+      </div>
+      <div class="step" id="step-validate">
+        <span class="step-num">02</span>
+        <span class="step-icon">🔍</span>
+        <span class="step-label">Validación</span>
+      </div>
+      <div class="step" id="step-clean">
+        <span class="step-num">03</span>
+        <span class="step-icon">🧹</span>
+        <span class="step-label">Limpieza &amp; Orden</span>
+      </div>
+      <div class="step" id="step-format">
+        <span class="step-num">04</span>
+        <span class="step-icon">🎨</span>
+        <span class="step-label">Formato Corp.</span>
+      </div>
+      <div class="step" id="step-export">
+        <span class="step-num">05</span>
+        <span class="step-icon">⬇</span>
+        <span class="step-label">Exportación</span>
+      </div>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <div class="log-panel" id="logPanel"></div>
+
+    <div class="stats-bar" id="statsBar">
+      <div class="stat">
+        <div class="stat-val" id="sFiles">0</div>
+        <div class="stat-lbl">Archivos</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" id="sRows">0</div>
+        <div class="stat-lbl">Filas totales</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" id="sDropped">0</div>
+        <div class="stat-lbl">Filas filtradas</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" id="sCols">0</div>
+        <div class="stat-lbl">Columnas</div>
+      </div>
+    </div>
+
+    <div class="result-banner" id="resultBanner">
+      <div class="result-title" id="resultTitle"></div>
+      <div class="result-body"  id="resultBody"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn-primary"   id="processBtn" disabled>▶ CONSOLIDAR Y EXPORTAR EXCEL</button>
+      <button class="btn-secondary" id="clearBtn"   disabled>✕ LIMPIAR</button>
+    </div>
+
+  </div><!-- /#tab-csv -->
+
+
+  <!-- ════════════════════════════════════════
+       TAB 2 — JSON → EXCEL
+  ════════════════════════════════════════ -->
+  <div class="main tab-panel" id="tab-json">
+
+    <!-- 01 · EDITOR JSON -->
+    <div class="section-label">01 — Pegar JSON en bruto</div>
+
+    <div class="json-editor">
+      <textarea
+        id="jsonInput"
+        class="json-textarea"
+        placeholder='{
+  "empresa": "Acme S.A.",
+  "transacciones": [
+    { "fecha": "2025-01-05", "concepto": "Venta", "monto": 150000 },
+    { "fecha": "2025-02-12", "concepto": "Compra", "monto": 320000 }
+  ]
+}
+
+— Pega aquí cualquier JSON: array, objeto anidado, array de arrays…
+— La tabla se genera automáticamente al detectar estructura válida.'
+        spellcheck="false"
+        autocomplete="off"
+      ></textarea>
+    </div>
+
+    <!-- Toolbar: meta + acciones rápidas -->
+    <div class="json-toolbar">
+      <div class="json-meta">
+        <div class="jm-item">
+          Estructura: <span class="jm-val" id="jmType">—</span>
+        </div>
+        <div class="jm-item">
+          Filas: <span class="jm-val" id="jmRows">—</span>
+        </div>
+        <div class="jm-item">
+          Cols: <span class="jm-val" id="jmCols">—</span>
+        </div>
+      </div>
+      <div class="json-actions">
+        <button class="btn-ghost" id="jsonSampleBtn">⊞ EJEMPLO</button>
+        <button class="btn-ghost" id="jsonClearBtn">✕ LIMPIAR</button>
+      </div>
+    </div>
+
+    <!-- 02 · OPCIONES -->
+    <hr class="divider">
+    <div class="section-label">02 — Opciones de exportación</div>
+
+    <div class="json-opts">
+      <div class="json-opt">
+        <div>
+          <span class="json-opt-label">Formato contable</span>
+          <span class="json-opt-desc">Aplica $#,##0 a columnas monetarias</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="jsonToggleAcct" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="json-opt">
+        <div>
+          <span class="json-opt-label">Panel inmovilizado</span>
+          <span class="json-opt-desc">Congela la fila de encabezados</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="jsonToggleFreeze" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="json-opt">
+        <div>
+          <span class="json-opt-label">Multi-hoja</span>
+          <span class="json-opt-desc">Una hoja por cada array del objeto raíz</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="jsonToggleMulti">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Tema de tabla</label>
+        <select id="jsonTheme">
+          <option value="TableStyleMedium2">Corp Azul (Medium 2)</option>
+          <option value="TableStyleMedium9">Corp Verde (Medium 9)</option>
+          <option value="TableStyleMedium15">Corp Naranja (Medium 15)</option>
+          <option value="TableStyleDark1">Dark 1 — Oscuro</option>
+          <option value="TableStyleLight1">Light 1 — Limpio</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Nombre del archivo</label>
+        <input type="text" id="jsonOutputName" placeholder="JSON_Export" value="JSON_Export">
+      </div>
+    </div>
+
+    <!-- 03 · PREVIEW -->
+    <div class="json-preview-wrap" id="jsonPreviewWrap">
+      <hr class="divider">
+      <div class="section-label">03 — Vista previa de tabla</div>
+      <div class="preview-header">
+        <span class="preview-title">Datos aplanados listos para Excel</span>
+        <span class="preview-badge" id="previewBadge"></span>
+      </div>
+      <div class="preview-scroll">
+        <table class="preview-table" id="previewTable"></table>
+      </div>
+    </div>
+
+    <!-- EXPORT ACTION -->
+    <div class="actions" style="margin-top:28px">
+      <button class="btn-primary" id="jsonExportBtn" disabled>▶ EXPORTAR A EXCEL</button>
+    </div>
+
+  </div><!-- /#tab-json -->
+
+  <!-- App logic (loaded last so DOM is ready) -->
+  <script src="script.js"></script>
+
+</body>
+</html>
