@@ -966,4 +966,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Init JSON tab module ───────────────────────────────────
   JsonTab.init();
-})();
+});
