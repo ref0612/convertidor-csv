@@ -911,7 +911,7 @@ const JsonTab = (() => {
 // ══════════════════════════════════════════════════════════════
 // EVENT WIRING — DOMContentLoaded
 // ══════════════════════════════════════════════════════════════
-(function initEvents() {
+document.addEventListener('DOMContentLoaded', () => {
   const dropZone  = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
 
