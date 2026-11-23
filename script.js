@@ -108,28 +108,35 @@ const FileReaderModule = (() => {
   };
 
   // Numbers: "19.990" / "1.234.567" = CL thousands, "1.234,56" = CL decimal, "12.5" = plain.
-  // Leading-zero codes ("000123") stay text.
+  // Currency "$42.000" / "$-384.000" / "-$5.000" → number. Leading-zero codes ("000123") stay text.
   const toValue = v => {
-    const s = String(v ?? '').trim();
+    if (typeof v === 'number') return v;
+    let s = String(v ?? '').trim();
     if (s === '') return null;
-    if (/^-?0\d/.test(s)) return s;
+    const cur = s.match(/^(-?)\s*\$\s*(-?)\s*(\d[\d.,]*)$/);
+    if (cur) s = (cur[1] || cur[2]) + cur[3];
+    if (/^-?0\d/.test(s)) return cur ? Number(s.replace(/\./g, '')) : s;
     if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) return Number(s.replace(/\./g, ''));
     if (/^-?\d{1,3}(\.\d{3})*,\d+$/.test(s)) return Number(s.replace(/\./g, '').replace(',', '.'));
     if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s);
-    return s;
+    return cur ? String(v).trim() : s;
   };
+
+  const _filled = r => r.filter(c => String(c ?? '').trim() !== '').length;
 
   // Header row = first row whose filled cells reach >=50% of the widest row.
   // Skips report preambles like "Fecha: ,01/04/2026" / ",,,,,,Gastos".
   const findHeaderRow = rows => {
-    const filled = r => r.filter(c => String(c ?? '').trim() !== '').length;
-    const width = Math.max(...rows.map(filled));
-    return Math.max(0, rows.findIndex(r => filled(r) >= Math.max(2, width * 0.5)));
+    const width = Math.max(...rows.map(_filled));
+    return Math.max(0, rows.findIndex(r => _filled(r) >= Math.max(2, width * 0.5)));
   };
 
-  // Turn raw 2D rows into { headers, data } with preamble skipped and unique headers
+  // Turn raw 2D rows into { headers, data, title } with preamble skipped and unique headers
   const rowsToDataset = (name, rows) => {
     const h = findHeaderRow(rows);
+    // A single-cell line above the header (",,,,,Resumen Multi Estación") is the table title
+    const titleRow = rows.slice(0, h).reverse().find(r => _filled(r) === 1);
+    const title = titleRow ? String(titleRow.find(c => String(c ?? '').trim())).trim() : null;
     const width = Math.max(...rows.slice(h).map(r => r.length));
     const raw = Array.from({ length: width }, (_, i) => rows[h][i] ?? '');
     // Drop fully-empty trailing columns
@@ -137,17 +144,78 @@ const FileReaderModule = (() => {
     while (last > 0 && !String(raw[last]).trim() && rows.slice(h + 1).every(r => !String(r[last] ?? '').trim())) last--;
     const headers = DataCleaner.sanitizeHeaders(raw.slice(0, last + 1).map((c, i) => String(c).trim() || `Col_${i + 1}`));
     const data = rows.slice(h + 1)
-      .filter(r => r.some(c => String(c ?? '').trim() !== ''))
+      .filter(r => _filled(r) > 0)
       .map(r => Object.fromEntries(headers.map((k, i) => [k, toValue(r[i])])));
-    return { name, headers, data };
+    return { name, title, headers, data };
+  };
+
+  // Split raw rows into blocks separated by blank lines. Blocks that continue the
+  // previous table (same row width, similar fill) are re-joined, so a stray blank
+  // line inside the data doesn't cut it in two.
+  const _splitBlocks = rows => {
+    const blocks = [];
+    let cur = [];
+    for (const r of rows) {
+      if (_filled(r)) cur.push(r);
+      else if (cur.length) { blocks.push(cur); cur = []; }
+    }
+    if (cur.length) blocks.push(cur);
+    const merged = [];
+    const maxFilled = b => Math.max(...b.map(_filled));
+    for (const b of blocks) {
+      const prev = merged[merged.length - 1];
+      const w = prev && prev[prev.length - 1].length;
+      if (prev && w > 2 && b.every(r => r.length === w) && maxFilled(b) >= maxFilled(prev) * 0.5) prev.push(...b);
+      else merged.push(b);
+    }
+    return merged;
+  };
+
+  // Key/value block: every row has at most 2 filled cells ("Monto Neto(A)", "$1.286.706.755")
+  const _isKeyValue = b => b.every(r => _filled(r) <= 2);
+
+  // Whole file → main table (largest block) + extra sheets for report summaries.
+  // All key/value summary blocks become one table: one row per block, one column per key.
+  const rowsToReport = (name, rows) => {
+    const blocks = _splitBlocks(rows);
+    const mainIdx = blocks.reduce((best, b, i) => b.length > blocks[best].length ? i : best, 0);
+    const main = rowsToDataset(name, blocks[mainIdx]);
+    const extras = [];
+    const kvRows = [];
+    const keyNames = new Map(); // whitespace-insensitive key → first spelling seen
+    blocks.forEach((b, i) => {
+      if (i === mainIdx) return;
+      if (_isKeyValue(b)) {
+        const obj = {};
+        b.forEach((r, j) => {
+          const cells = r.filter(c => String(c ?? '').trim() !== '').map(c => String(c).trim());
+          // A lone title ("Resumen") goes in the label column the other blocks use ("Nombre de Sucursal")
+          const labelCol = keyNames.size ? keyNames.values().next().value : 'Sección';
+          let [k, v] = cells.length === 1 && j === 0 ? [labelCol, cells[0]] : cells;
+          if (cells.length === 1 && j > 0) { k = cells[0]; v = ''; }
+          const norm = k.replace(/\s+/g, '').toLowerCase();
+          if (!keyNames.has(norm)) keyNames.set(norm, k);
+          obj[keyNames.get(norm)] = toValue(v);
+        });
+        kvRows.push(obj);
+      } else {
+        const t = rowsToDataset(name, b);
+        if (t.data.length) extras.push({ ...t, title: t.title || `Tabla ${extras.length + 1}` });
+      }
+    });
+    if (kvRows.length) {
+      const headers = [...new Set(kvRows.flatMap(Object.keys))];
+      extras.unshift({ name, title: 'Resumen', headers, data: kvRows.map(r => Object.fromEntries(headers.map(h => [h, r[h] ?? null]))) });
+    }
+    return { ...main, extras };
   };
 
   // Parse flat text files (CSV, TSV, TXT, pipe-separated, etc.)
   const _parseText = async file => {
     const text = await _decode(file);
-    const res = Papa.parse(text, { header: false, skipEmptyLines: 'greedy', delimiter: detectDelimiter(text) });
-    if (!res.data.length) throw new Error(`El archivo "${file.name}" está vacío.`);
-    return rowsToDataset(file.name, res.data);
+    const res = Papa.parse(text, { header: false, skipEmptyLines: false, delimiter: detectDelimiter(text) });
+    if (!res.data.some(r => _filled(r))) throw new Error(`El archivo "${file.name}" está vacío.`);
+    return rowsToReport(file.name, res.data);
   };
 
   // Parse XLSX via ExcelJS (convertidor-csv repo integration)
@@ -159,17 +227,20 @@ const FileReaderModule = (() => {
     if (!ws) throw new Error(`El archivo "${file.name}" no contiene hojas de cálculo.`);
 
     const rows = [];
-    ws.eachRow({ includeEmpty: false }, row => {
-      rows.push(row.values.slice(1).map(v => {
+    const width = ws.columnCount;
+    ws.eachRow({ includeEmpty: true }, row => {
+      const vals = row.values.slice(1).map(v => {
         if (v instanceof Date) return v.toLocaleDateString('es-CL');
         if (v && typeof v === 'object' && v.result !== undefined) return v.result;
         if (v && typeof v === 'object' && v.richText) return v.richText.map(t => t.text).join('');
         if (v && typeof v === 'object' && v.text !== undefined) return v.text;
         return v ?? '';
-      }));
+      });
+      // Pad to sheet width so block detection sees equal row lengths, like a CSV
+      rows.push(Array.from({ length: width }, (_, i) => vals[i] ?? ''));
     });
-    if (!rows.length) throw new Error(`El archivo "${file.name}" está vacío.`);
-    return rowsToDataset(file.name, rows);
+    if (!rows.some(r => _filled(r))) throw new Error(`El archivo "${file.name}" está vacío.`);
+    return rowsToReport(file.name, rows);
   };
 
   // Public: route by extension
@@ -245,38 +316,43 @@ const ChronoSorter = (() => {
     if (!d) return new Date(0);
 
     let dt;
-    const rCL  = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/;   // DD/MM/YYYY
-    const rISO = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/;    // YYYY-MM-DD
+    // Optional time inside the date cell: "01/04/2026 00:00", "2026-04-01T13:45:00", "01/04/2026 04:49 PM"
+    const rCL  = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T](.+))?$/;   // DD/MM/YYYY [time]
+    const rISO = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[ T](.+))?$/;    // YYYY-MM-DD [time]
+    let inlineTime = '';
 
     if (rCL.test(d)) {
-      const [, dd, mm, yyyy] = d.match(rCL);
-      dt = new Date(+yyyy, +mm - 1, +dd);
+      const [, dd, mm, yyyy, t] = d.match(rCL);
+      dt = new Date(+yyyy, +mm - 1, +dd); inlineTime = t || '';
     } else if (rISO.test(d)) {
-      const [, yyyy, mm, dd] = d.match(rISO);
-      dt = new Date(+yyyy, +mm - 1, +dd);
+      const [, yyyy, mm, dd, t] = d.match(rISO);
+      dt = new Date(+yyyy, +mm - 1, +dd); inlineTime = t || '';
     } else {
       dt = new Date(d);
       if (isNaN(dt.getTime())) return new Date(0);
     }
 
-    // Inject time component
-    if (h) {
-      const parts = h.split(' ');
+    // Inject time component (from the hora column, else from the date cell itself)
+    const time = h || inlineTime;
+    if (time) {
+      const parts = time.trim().split(' ');
       const [hrs, mins] = parts[0].split(':');
       let hh = parseInt(hrs) || 0;
       let mm2 = parseInt(mins) || 0;
+      const secs = parseInt(parts[0].split(':')[2]) || 0;
       if (parts[1]) {
         const ampm = parts[1].toUpperCase();
         if (ampm === 'PM' && hh < 12) hh += 12;
         if (ampm === 'AM' && hh === 12) hh = 0;
       }
-      dt.setHours(hh, mm2);
+      dt.setHours(hh, mm2, secs);
     }
 
     return dt;
   };
 
-  const sort = data => [...data].sort((a, b) => _parseDate(a) - _parseDate(b));
+  // Parse each row's date once (not on every comparison); stable for equal dates
+  const sort = data => data.map(r => [_parseDate(r).getTime(), r]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
 
   return { sort };
 })();
@@ -510,6 +586,21 @@ const Pipeline = (() => {
       });
 
       await ExcelGenerator.generate(ws, rawHeaders, safeHeaders, master, opts);
+
+      // Report summaries found below/above the detail (per-branch totals, etc.) → own sheets
+      const usedNames = new Set(['reporte consolidado']);
+      for (const d of datasets) {
+        for (const ex of d.extras || []) {
+          let base = (datasets.length > 1 ? `${ex.title} - ${d.name}` : ex.title)
+            .replace(/[\\\/\?\*\[\]:]/g, '_').slice(0, 28) || 'Resumen';
+          let sheetName = base, n = 2;
+          while (usedNames.has(sheetName.toLowerCase())) sheetName = `${base} ${n++}`;
+          usedNames.add(sheetName.toLowerCase());
+          const exWs = wb.addWorksheet(sheetName, { properties: { defaultRowHeight: 16 } });
+          await ExcelGenerator.generate(exWs, ex.headers, DataCleaner.sanitizeHeaders(ex.headers), ex.data, opts);
+          _log(`Hoja "${sheetName}": ${ex.data.length} filas de resumen.`, 'ok');
+        }
+      }
       _log('Tema, bandas, anchos dinámicos y formatos contables aplicados.', 'ok');
       _setProgress(80);
 
