@@ -3,326 +3,367 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DataForge</title>
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Convierte reportes CSV, TSV, XLSX y JSON en archivos Excel limpios y con formato, directamente en tu navegador.">
+  <title>DataForge — Convertidor a Excel</title>
+  <link rel="icon" href="favicon.ico">
 
-  <!-- Fonts -->
+  <!-- Apply saved theme before paint (no flash) -->
+  <script>
+    try { const t = localStorage.getItem('df-theme'); if (t) document.documentElement.dataset.theme = t; } catch (_) {}
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-
-  <!-- Styles -->
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 
-  <!-- Dependencies (CDN) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 </head>
 <body>
 
-  <!-- ── TOP BAR ── -->
-  <div class="topbar">
-    <div class="brand">
-      <span class="brand-logo">DataForge</span>
-      <span class="brand-sub">Enterprise Consolidator Suite</span>
-    </div>
-    <span class="version-badge">v2.0</span>
-  </div>
+  <!-- ── Icon sprite (Lucide, MIT) ── -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 5.5C4 4.1 7.6 3 12 3s8 1.1 8 2.5S16.4 8 12 8 4 6.9 4 5.5Z"/><path d="M4 5.5v6C4 12.9 7.6 14 12 14s8-1.1 8-2.5v-6"/><path d="M4 11.5v7C4 19.9 7.6 21 12 21s8-1.1 8-2.5v-7"/></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></symbol>
+      <symbol id="i-sheet" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2M14 13h2M8 17h2M14 17h2"/></symbol>
+      <symbol id="i-braces" viewBox="0 0 24 24"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></symbol>
+      <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+      <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></symbol>
+      <symbol id="i-table" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></symbol>
+      <symbol id="i-calendar" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+      <symbol id="i-dollar" viewBox="0 0 24 24"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></symbol>
+      <symbol id="i-filter" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></symbol>
+      <symbol id="i-clipboard" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+    </defs>
+  </svg>
 
-  <!-- ── TAB NAV ── -->
-  <nav class="tab-nav">
-    <button class="tab-btn active" data-tab="tab-csv">
-      <span class="tab-dot"></span>
-      <span>Consolidador CSV / XLSX</span>
-    </button>
-    <button class="tab-btn" data-tab="tab-json">
-      <span class="tab-dot"></span>
-      <span>JSON → Excel</span>
-    </button>
-  </nav>
+  <a class="skip-link" href="#main">Saltar al contenido</a>
 
-  <!-- ════════════════════════════════════════
-       TAB 1 — CSV / XLSX CONSOLIDATOR
-  ════════════════════════════════════════ -->
-  <div class="main tab-panel active" id="tab-csv">
-
-    <!-- 01 · INGESTA -->
-    <div class="section-label">01 — Ingesta de datos</div>
-
-    <div class="dropzone" id="dropZone">
-      <input type="file" id="fileInput" multiple>
-      <div class="dz-icon">⬡</div>
-      <div class="dz-title">Arrastra archivos o haz clic para seleccionar</div>
-      <div class="dz-sub">
-        Todos los archivos deben compartir la misma estructura de columnas.<br>
-        Soporta múltiples fragmentos del mismo período.
+  <!-- ── HEADER ── -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="./" aria-label="DataForge, inicio">
+        <span class="brand-mark"><svg class="ic"><use href="#i-logo"/></svg></span>
+        <span class="brand-text">
+          <span class="brand-logo">DataForge</span>
+          <span class="brand-sub">Enterprise Consolidator Suite</span>
+        </span>
+      </a>
+      <div class="topbar-actions">
+        <span class="version-badge">v3.0</span>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="Cambiar tema claro / oscuro">
+          <svg class="ic ic-sun" aria-hidden="true"><use href="#i-sun"/></svg>
+          <svg class="ic ic-moon" aria-hidden="true"><use href="#i-moon"/></svg>
+        </button>
       </div>
-      <div class="dz-formats">
-        <span class="fmt-pill">CSV</span>
-        <span class="fmt-pill">TSV</span>
-        <span class="fmt-pill">TXT</span>
-        <span class="fmt-pill">XLSX</span>
-      </div>
+    </div>
+  </header>
+
+  <main id="main" class="page">
+
+    <!-- ── HERO ── -->
+    <section class="hero reveal">
+      <span class="hero-eyebrow"><svg class="ic" aria-hidden="true"><use href="#i-zap"/></svg> Reportes listos en segundos</span>
+      <h1 class="hero-title">Cualquier reporte, <span class="hl">un Excel impecable.</span></h1>
+      <p class="hero-sub">Sube CSV, TSV, TXT o XLSX —con encabezados, saltos y resúmenes— o pega un JSON. Detectamos la estructura, limpiamos y exportamos con formato corporativo.</p>
+      <ul class="hero-chips" aria-label="Características">
+        <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg> 100% en tu navegador: los datos no salen de tu equipo</li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-layers"/></svg> Resúmenes en hojas separadas</li>
+        <li><svg class="ic" aria-hidden="true"><use href="#i-dollar"/></svg> Montos CLP como números</li>
+      </ul>
+    </section>
+
+    <!-- ── TABS ── -->
+    <div class="tab-nav reveal" role="tablist" aria-label="Modo de conversión">
+      <button class="tab-btn active" data-tab="tab-csv" role="tab" aria-selected="true" aria-controls="tab-csv" id="tabbtn-csv">
+        <svg class="ic" aria-hidden="true"><use href="#i-sheet"/></svg>
+        <span><span class="tab-long">Archivos </span>CSV / XLSX</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-json" role="tab" aria-selected="false" aria-controls="tab-json" id="tabbtn-json" tabindex="-1">
+        <svg class="ic" aria-hidden="true"><use href="#i-braces"/></svg>
+        <span>JSON → Excel</span>
+      </button>
+      <span class="tab-indicator" aria-hidden="true"></span>
     </div>
 
-    <div class="file-list" id="fileList"></div>
+    <!-- ════════════ TAB 1 — CSV / XLSX ════════════ -->
+    <section class="tab-panel active" id="tab-csv" role="tabpanel" aria-labelledby="tabbtn-csv">
+      <div class="layout">
 
-    <!-- 02 · CONFIGURACIÓN -->
-    <hr class="divider">
-    <div class="section-label">02 — Configuración del motor</div>
+        <div class="col-main">
+          <!-- 01 · Ingesta -->
+          <div class="card reveal">
+            <div class="card-head">
+              <span class="step-badge">1</span>
+              <div>
+                <h2 class="card-title">Sube tus archivos</h2>
+                <p class="card-sub">Puedes combinar varios archivos; las columnas se unen por nombre.</p>
+              </div>
+            </div>
 
-    <div class="settings-grid">
-      <div class="setting-card">
-        <div class="setting-head">
-          <span class="setting-name">Orden cronológico</span>
-          <label class="toggle">
-            <input type="checkbox" id="toggleChron" checked>
-            <span class="toggle-slider"></span>
-          </label>
+            <div class="dropzone" id="dropZone" role="button" tabindex="0" aria-describedby="dzHint">
+              <input type="file" id="fileInput" multiple accept=".csv,.tsv,.txt,.xlsx" aria-label="Seleccionar archivos">
+              <div class="dz-icon"><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg></div>
+              <div class="dz-title">Arrastra archivos aquí o <span class="dz-link">búscalos en tu equipo</span></div>
+              <div class="dz-sub" id="dzHint">Detecta automáticamente delimitador, codificación, fila de encabezados y bloques de resumen.</div>
+              <div class="dz-formats" aria-label="Formatos soportados">
+                <span class="fmt-pill">CSV</span><span class="fmt-pill">TSV</span><span class="fmt-pill">TXT</span><span class="fmt-pill">XLSX</span>
+              </div>
+            </div>
+
+            <div class="file-list" id="fileList" aria-live="polite"></div>
+          </div>
+
+          <!-- 03 · Pipeline -->
+          <div class="card reveal">
+            <div class="card-head">
+              <span class="step-badge">3</span>
+              <div>
+                <h2 class="card-title">Procesamiento</h2>
+                <p class="card-sub">Sigue cada etapa en tiempo real.</p>
+              </div>
+            </div>
+
+            <ol class="pipeline" id="pipeline">
+              <li class="step" id="step-read"><span class="step-icon"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg></span><span class="step-label">Lectura</span></li>
+              <li class="step" id="step-validate"><span class="step-icon"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></span><span class="step-label">Validación</span></li>
+              <li class="step" id="step-clean"><span class="step-icon"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg></span><span class="step-label">Limpieza</span></li>
+              <li class="step" id="step-format"><span class="step-icon"><svg class="ic" aria-hidden="true"><use href="#i-table"/></svg></span><span class="step-label">Formato</span></li>
+              <li class="step" id="step-export"><span class="step-icon"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg></span><span class="step-label">Exportación</span></li>
+            </ol>
+
+            <div class="progress-wrap" id="progressWrap" role="progressbar" aria-label="Progreso">
+              <div class="progress-bar" id="progressBar"></div>
+            </div>
+
+            <div class="stats-bar" id="statsBar">
+              <div class="stat"><div class="stat-val" id="sFiles">0</div><div class="stat-lbl">Archivos</div></div>
+              <div class="stat"><div class="stat-val" id="sRows">0</div><div class="stat-lbl">Filas</div></div>
+              <div class="stat"><div class="stat-val" id="sDropped">0</div><div class="stat-lbl">Filtradas</div></div>
+              <div class="stat"><div class="stat-val" id="sCols">0</div><div class="stat-lbl">Columnas</div></div>
+            </div>
+
+            <div class="result-banner" id="resultBanner" role="status" aria-live="polite">
+              <div class="result-title" id="resultTitle"></div>
+              <div class="result-body" id="resultBody"></div>
+            </div>
+
+            <div class="log-panel" id="logPanel" aria-label="Registro de proceso"></div>
+
+            <p class="empty-hint" id="pipelineHint">
+              <svg class="ic" aria-hidden="true"><use href="#i-terminal"/></svg>
+              Agrega archivos y presiona <strong>Consolidar y exportar</strong> para comenzar.
+            </p>
+          </div>
         </div>
-        <div class="setting-desc">Ordena todas las filas por fecha/hora detectadas automáticamente.</div>
-      </div>
-      <div class="setting-card">
-        <div class="setting-head">
-          <span class="setting-name">Formato contable</span>
-          <label class="toggle">
-            <input type="checkbox" id="toggleAcct" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="setting-desc">Detecta columnas monetarias y aplica formato <code style="font-size:.7rem">$#,##0</code> automáticamente.</div>
-      </div>
-      <div class="setting-card">
-        <div class="setting-head">
-          <span class="setting-name">Filtrar filas de totales</span>
-          <label class="toggle">
-            <input type="checkbox" id="toggleFilter" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="setting-desc">Elimina filas con subtotales o la palabra "total" al final del archivo.</div>
-      </div>
-      <div class="setting-card">
-        <div class="setting-head">
-          <span class="setting-name">Panel inmovilizado</span>
-          <label class="toggle">
-            <input type="checkbox" id="toggleFreeze" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="setting-desc">Congela la primera fila de encabezados en el Excel resultante.</div>
-      </div>
-    </div>
 
-    <div class="field-row">
-      <div class="field">
-        <label>Tema de tabla</label>
-        <select id="tableTheme">
-          <option value="TableStyleMedium2">Corp Azul (Medium 2)</option>
-          <option value="TableStyleMedium9">Corp Verde (Medium 9)</option>
-          <option value="TableStyleMedium15">Corp Naranja (Medium 15)</option>
-          <option value="TableStyleDark1">Dark 1 — Oscuro</option>
-          <option value="TableStyleLight1">Light 1 — Limpio</option>
-        </select>
+        <!-- 02 · Configuración -->
+        <aside class="col-side">
+          <div class="card sticky reveal">
+            <div class="card-head">
+              <span class="step-badge">2</span>
+              <div>
+                <h2 class="card-title">Configuración</h2>
+                <p class="card-sub">Ajusta cómo se arma el Excel.</p>
+              </div>
+            </div>
+
+            <div class="settings-grid">
+              <label class="setting-card">
+                <span class="setting-icon"><svg class="ic" aria-hidden="true"><use href="#i-calendar"/></svg></span>
+                <span class="setting-text"><span class="setting-name">Orden cronológico</span><span class="setting-desc">Ordena por la fecha/hora detectada.</span></span>
+                <span class="toggle"><input type="checkbox" id="toggleChron" role="switch" checked><span class="toggle-slider"></span></span>
+              </label>
+              <label class="setting-card">
+                <span class="setting-icon"><svg class="ic" aria-hidden="true"><use href="#i-dollar"/></svg></span>
+                <span class="setting-text"><span class="setting-name">Formato contable</span><span class="setting-desc">Aplica <code>$#,##0</code> a montos.</span></span>
+                <span class="toggle"><input type="checkbox" id="toggleAcct" role="switch" checked><span class="toggle-slider"></span></span>
+              </label>
+              <label class="setting-card">
+                <span class="setting-icon"><svg class="ic" aria-hidden="true"><use href="#i-filter"/></svg></span>
+                <span class="setting-text"><span class="setting-name">Quitar filas de totales</span><span class="setting-desc">Elimina filas "Total" / "Subtotal".</span></span>
+                <span class="toggle"><input type="checkbox" id="toggleFilter" role="switch" checked><span class="toggle-slider"></span></span>
+              </label>
+              <label class="setting-card">
+                <span class="setting-icon"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></span>
+                <span class="setting-text"><span class="setting-name">Inmovilizar encabezado</span><span class="setting-desc">Congela la primera fila.</span></span>
+                <span class="toggle"><input type="checkbox" id="toggleFreeze" role="switch" checked><span class="toggle-slider"></span></span>
+              </label>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label for="tableTheme">Tema de tabla</label>
+                <select id="tableTheme">
+                  <option value="TableStyleMedium2">Azul corporativo</option>
+                  <option value="TableStyleMedium9">Verde</option>
+                  <option value="TableStyleMedium15">Naranja</option>
+                  <option value="TableStyleDark1">Oscuro</option>
+                  <option value="TableStyleLight1">Limpio</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="outputName">Nombre del archivo</label>
+                <input type="text" id="outputName" placeholder="Consolidado_Maestro" value="Nuevo_Archivo" autocomplete="off">
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="btn-primary" id="processBtn" type="button" disabled>
+                <svg class="ic" aria-hidden="true"><use href="#i-download"/></svg>
+                <span>Consolidar y exportar</span>
+              </button>
+              <button class="btn-secondary" id="clearBtn" type="button" disabled>
+                <svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>
+                <span>Limpiar</span>
+              </button>
+            </div>
+          </div>
+        </aside>
+
       </div>
-      <div class="field">
-        <label>Nombre del archivo</label>
-        <input type="text" id="outputName" placeholder="Consolidado_Maestro" value="Nuevo_Archivo">
-      </div>
-    </div>
+    </section>
 
-    <!-- 03 · PIPELINE -->
-    <hr class="divider">
-    <div class="section-label">03 — Pipeline de procesamiento</div>
+    <!-- ════════════ TAB 2 — JSON ════════════ -->
+    <section class="tab-panel" id="tab-json" role="tabpanel" aria-labelledby="tabbtn-json">
+      <div class="layout">
 
-    <div class="pipeline" id="pipeline">
-      <div class="step" id="step-read">
-        <span class="step-num">01</span>
-        <span class="step-icon">📂</span>
-        <span class="step-label">Lectura &amp; Parseo</span>
-      </div>
-      <div class="step" id="step-validate">
-        <span class="step-num">02</span>
-        <span class="step-icon">🔍</span>
-        <span class="step-label">Validación</span>
-      </div>
-      <div class="step" id="step-clean">
-        <span class="step-num">03</span>
-        <span class="step-icon">🧹</span>
-        <span class="step-label">Limpieza &amp; Orden</span>
-      </div>
-      <div class="step" id="step-format">
-        <span class="step-num">04</span>
-        <span class="step-icon">🎨</span>
-        <span class="step-label">Formato Corp.</span>
-      </div>
-      <div class="step" id="step-export">
-        <span class="step-num">05</span>
-        <span class="step-icon">⬇</span>
-        <span class="step-label">Exportación</span>
-      </div>
-    </div>
+        <div class="col-main">
+          <div class="card reveal">
+            <div class="card-head">
+              <span class="step-badge">1</span>
+              <div>
+                <h2 class="card-title">Pega tu JSON</h2>
+                <p class="card-sub">Arrays, objetos anidados, respuestas de API o JSON por líneas (NDJSON).</p>
+              </div>
+            </div>
 
-    <div class="progress-wrap" id="progressWrap">
-      <div class="progress-bar" id="progressBar"></div>
-    </div>
-
-    <div class="log-panel" id="logPanel"></div>
-
-    <div class="stats-bar" id="statsBar">
-      <div class="stat">
-        <div class="stat-val" id="sFiles">0</div>
-        <div class="stat-lbl">Archivos</div>
-      </div>
-      <div class="stat">
-        <div class="stat-val" id="sRows">0</div>
-        <div class="stat-lbl">Filas totales</div>
-      </div>
-      <div class="stat">
-        <div class="stat-val" id="sDropped">0</div>
-        <div class="stat-lbl">Filas filtradas</div>
-      </div>
-      <div class="stat">
-        <div class="stat-val" id="sCols">0</div>
-        <div class="stat-lbl">Columnas</div>
-      </div>
-    </div>
-
-    <div class="result-banner" id="resultBanner">
-      <div class="result-title" id="resultTitle"></div>
-      <div class="result-body"  id="resultBody"></div>
-    </div>
-
-    <div class="actions">
-      <button class="btn-primary"   id="processBtn" disabled>▶ CONSOLIDAR Y EXPORTAR EXCEL</button>
-      <button class="btn-secondary" id="clearBtn"   disabled>✕ LIMPIAR</button>
-    </div>
-
-  </div><!-- /#tab-csv -->
-
-
-  <!-- ════════════════════════════════════════
-       TAB 2 — JSON → EXCEL
-  ════════════════════════════════════════ -->
-  <div class="main tab-panel" id="tab-json">
-
-    <!-- 01 · EDITOR JSON -->
-    <div class="section-label">01 — Pegar JSON en bruto</div>
-
-    <div class="json-editor">
-      <textarea
-        id="jsonInput"
-        class="json-textarea"
-        placeholder='{
+            <div class="json-editor">
+              <div class="json-editor-bar">
+                <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="json-editor-name">input.json</span>
+                <div class="json-actions">
+                  <button class="btn-ghost" id="jsonSampleBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-clipboard"/></svg>Ejemplo</button>
+                  <button class="btn-ghost" id="jsonClearBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>Limpiar</button>
+                </div>
+              </div>
+              <label for="jsonInput" class="sr-only">Contenido JSON</label>
+              <textarea id="jsonInput" class="json-textarea" spellcheck="false" autocomplete="off"
+                placeholder='{
   "empresa": "Acme S.A.",
   "transacciones": [
     { "fecha": "2025-01-05", "concepto": "Venta", "monto": 150000 },
     { "fecha": "2025-02-12", "concepto": "Compra", "monto": 320000 }
   ]
-}
+}'></textarea>
+            </div>
 
-— Pega aquí cualquier JSON: array, objeto anidado, array de arrays…
-— La tabla se genera automáticamente al detectar estructura válida.'
-        spellcheck="false"
-        autocomplete="off"
-      ></textarea>
-    </div>
-
-    <!-- Toolbar: meta + acciones rápidas -->
-    <div class="json-toolbar">
-      <div class="json-meta">
-        <div class="jm-item">
-          Estructura: <span class="jm-val" id="jmType">—</span>
+            <div class="json-meta" aria-live="polite">
+              <div class="jm-item"><span class="jm-lbl">Estructura</span><span class="jm-val" id="jmType">—</span></div>
+              <div class="jm-item"><span class="jm-lbl">Filas</span><span class="jm-val" id="jmRows">—</span></div>
+              <div class="jm-item"><span class="jm-lbl">Columnas</span><span class="jm-val" id="jmCols">—</span></div>
+            </div>
+          </div>
         </div>
-        <div class="jm-item">
-          Filas: <span class="jm-val" id="jmRows">—</span>
+
+        <aside class="col-side">
+          <div class="card sticky reveal">
+            <div class="card-head">
+              <span class="step-badge">2</span>
+              <div>
+                <h2 class="card-title">Exportación</h2>
+                <p class="card-sub">Opciones del archivo final.</p>
+              </div>
+            </div>
+
+            <div class="settings-grid">
+              <label class="setting-card">
+                <span class="setting-icon"><svg class="ic" aria-hidden="true"><use href="#i-dollar"/></svg></span>
+                <span class="setting-text"><span class="setting-name">Formato contable</span><span class="setting-desc">Aplica <code>$#,##0</code> a montos.</span></span>
+                <span class="toggle"><input type="checkbox" id="jsonToggleAcct" role="switch" checked><span class="toggle-slider"></span></span>
+              </label>
+              <label class="setting-card">
+                <span class="setting-icon"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></span>
+                <span class="setting-text"><span class="setting-name">Inmovilizar encabezado</span><span class="setting-desc">Congela la primera fila.</span></span>
+                <span class="toggle"><input type="checkbox" id="jsonToggleFreeze" role="switch" checked><span class="toggle-slider"></span></span>
+              </label>
+              <label class="setting-card">
+                <span class="setting-icon"><svg class="ic" aria-hidden="true"><use href="#i-layers"/></svg></span>
+                <span class="setting-text"><span class="setting-name">Multi-hoja</span><span class="setting-desc">Una hoja por cada array raíz.</span></span>
+                <span class="toggle"><input type="checkbox" id="jsonToggleMulti" role="switch"><span class="toggle-slider"></span></span>
+              </label>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label for="jsonTheme">Tema de tabla</label>
+                <select id="jsonTheme">
+                  <option value="TableStyleMedium2">Azul corporativo</option>
+                  <option value="TableStyleMedium9">Verde</option>
+                  <option value="TableStyleMedium15">Naranja</option>
+                  <option value="TableStyleDark1">Oscuro</option>
+                  <option value="TableStyleLight1">Limpio</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="jsonOutputName">Nombre del archivo</label>
+                <input type="text" id="jsonOutputName" placeholder="JSON_Export" value="JSON_Export" autocomplete="off">
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="btn-primary" id="jsonExportBtn" type="button" disabled>
+                <svg class="ic" aria-hidden="true"><use href="#i-download"/></svg>
+                <span class="btn-label">Exportar a Excel</span>
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Preview (full width) -->
+        <div class="json-preview-wrap card" id="jsonPreviewWrap">
+          <div class="preview-header">
+            <div class="card-head">
+              <span class="step-badge">3</span>
+              <div>
+                <h2 class="card-title">Vista previa</h2>
+                <p class="card-sub">Datos aplanados listos para Excel.</p>
+              </div>
+            </div>
+            <span class="preview-badge" id="previewBadge"></span>
+          </div>
+          <div class="preview-scroll" tabindex="0" aria-label="Tabla de vista previa">
+            <table class="preview-table" id="previewTable"></table>
+          </div>
         </div>
-        <div class="jm-item">
-          Cols: <span class="jm-val" id="jmCols">—</span>
-        </div>
-      </div>
-      <div class="json-actions">
-        <button class="btn-ghost" id="jsonSampleBtn">⊞ EJEMPLO</button>
-        <button class="btn-ghost" id="jsonClearBtn">✕ LIMPIAR</button>
-      </div>
-    </div>
 
-    <!-- 02 · OPCIONES -->
-    <hr class="divider">
-    <div class="section-label">02 — Opciones de exportación</div>
+      </div>
+    </section>
 
-    <div class="json-opts">
-      <div class="json-opt">
-        <div>
-          <span class="json-opt-label">Formato contable</span>
-          <span class="json-opt-desc">Aplica $#,##0 a columnas monetarias</span>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="jsonToggleAcct" checked>
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <div class="json-opt">
-        <div>
-          <span class="json-opt-label">Panel inmovilizado</span>
-          <span class="json-opt-desc">Congela la fila de encabezados</span>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="jsonToggleFreeze" checked>
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <div class="json-opt">
-        <div>
-          <span class="json-opt-label">Multi-hoja</span>
-          <span class="json-opt-desc">Una hoja por cada array del objeto raíz</span>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="jsonToggleMulti">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    </div>
+  </main>
 
-    <div class="field-row">
-      <div class="field">
-        <label>Tema de tabla</label>
-        <select id="jsonTheme">
-          <option value="TableStyleMedium2">Corp Azul (Medium 2)</option>
-          <option value="TableStyleMedium9">Corp Verde (Medium 9)</option>
-          <option value="TableStyleMedium15">Corp Naranja (Medium 15)</option>
-          <option value="TableStyleDark1">Dark 1 — Oscuro</option>
-          <option value="TableStyleLight1">Light 1 — Limpio</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Nombre del archivo</label>
-        <input type="text" id="jsonOutputName" placeholder="JSON_Export" value="JSON_Export">
-      </div>
-    </div>
+  <footer class="footer">
+    <span>DataForge · Procesamiento local con ExcelJS y PapaParse</span>
+  </footer>
 
-    <!-- 03 · PREVIEW -->
-    <div class="json-preview-wrap" id="jsonPreviewWrap">
-      <hr class="divider">
-      <div class="section-label">03 — Vista previa de tabla</div>
-      <div class="preview-header">
-        <span class="preview-title">Datos aplanados listos para Excel</span>
-        <span class="preview-badge" id="previewBadge"></span>
-      </div>
-      <div class="preview-scroll">
-        <table class="preview-table" id="previewTable"></table>
-      </div>
-    </div>
-
-    <!-- EXPORT ACTION -->
-    <div class="actions" style="margin-top:28px">
-      <button class="btn-primary" id="jsonExportBtn" disabled>▶ EXPORTAR A EXCEL</button>
-    </div>
-
-  </div><!-- /#tab-json -->
-
-  <!-- App logic (loaded last so DOM is ready) -->
   <script src="script.js"></script>
-
 </body>
 </html>

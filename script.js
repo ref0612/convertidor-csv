@@ -64,15 +64,21 @@ const FM = (() => {
     const el = document.createElement('div');
     el.className = 'file-item' + (isError ? ' error' : '');
     el.dataset.name = f.name;
+    const icon = id => `<svg class="ic" aria-hidden="true"><use href="#i-${id}"/></svg>`;
     el.innerHTML = `
       <span class="file-icon">${getTypeLabel(ext)}</span>
       <div class="file-meta">
-        <div class="file-name">${f.name}</div>
-        <div class="file-size">${fmtSize(f.size)}</div>
+        <div class="file-name"></div>
+        <div class="file-size">${isError ? 'Formato no soportado' : fmtSize(f.size)}</div>
       </div>
-      <span class="file-status ${isError ? 'err' : 'ok'}">${isError ? '✕ ERR' : '✓ LISTO'}</span>
-      ${!isError ? `<button class="file-remove" onclick="FM.remove('${f.name}')" title="Quitar">×</button>` : ''}
+      <span class="file-status ${isError ? 'err' : 'ok'}">${isError ? icon('x') + 'Error' : icon('check') + 'Listo'}</span>
+      <button class="file-remove" type="button" title="Quitar">${icon('x')}</button>
     `;
+    // textContent: file names are user data, never HTML
+    el.querySelector('.file-name').textContent = f.name;
+    const btn = el.querySelector('.file-remove');
+    btn.setAttribute('aria-label', `Quitar ${f.name}`);
+    btn.addEventListener('click', () => isError ? el.remove() : remove(f.name));
     document.getElementById('fileList').appendChild(el);
   };
 
@@ -625,12 +631,12 @@ const Pipeline = (() => {
         document.getElementById(id).classList.add('done');
       });
       _log(`Archivo "${filename}" descargado exitosamente.`, 'ok');
-      _showResult(true, '✓ Exportación completada',
+      _showResult(true, 'Exportación completada',
         `${master.length.toLocaleString('es')} filas en ${rawHeaders.length} columnas → ${filename}`);
 
     } catch (err) {
       _log(`ERROR: ${err.message}`, 'err');
-      _showResult(false, '✕ Error en el pipeline', err.message);
+      _showResult(false, 'No se pudo procesar', err.message);
       console.error('[DataForge]', err);
     } finally {
       _running = false;
@@ -873,7 +879,8 @@ const JsonTab = (() => {
 
     const btn = _el('jsonExportBtn');
     btn.disabled = true;
-    btn.textContent = '⏳ GENERANDO…';
+    const label = btn.querySelector('.btn-label');
+    label.textContent = 'Generando…';
 
     try {
       const { headers, rows } = _flat;
@@ -924,15 +931,15 @@ const JsonTab = (() => {
         filename
       );
 
-      btn.textContent = '✓ DESCARGADO';
-      setTimeout(() => { btn.textContent = '▶ EXPORTAR A EXCEL'; btn.disabled = false; }, 2500);
+      label.textContent = 'Descargado';
+      setTimeout(() => { label.textContent = 'Exportar a Excel'; btn.disabled = false; }, 2500);
 
     } catch (err) {
       console.error('[DataForge JSON]', err);
       alert(`No se pudo exportar: ${err.message}`);
-      btn.textContent = '✕ ERROR — REINTENTAR';
+      label.textContent = 'Error — reintentar';
       btn.disabled = false;
-      setTimeout(() => { btn.textContent = '▶ EXPORTAR A EXCEL'; }, 3000);
+      setTimeout(() => { label.textContent = 'Exportar a Excel'; }, 3000);
     }
   };
 
@@ -984,6 +991,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Click on dropzone opens file picker
   dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+  });
 
   // File picker change
   fileInput.addEventListener('change', e => {
@@ -993,7 +1003,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Drag & drop
   dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-  dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
+  // Ignore dragleave fired when moving over the zone's own children (prevents flicker)
+  dropZone.addEventListener('dragleave', e => { if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove('drag-over'); });
   dropZone.addEventListener('drop', e => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
@@ -1017,18 +1028,32 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Expose FM.remove globally for inline onclick in file badges
-  window.FM = FM;
-
-  // ── Tab switching ──────────────────────────────────────────
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.tab;
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById(target).classList.add('active');
+  // ── Tab switching (ARIA tabs: click + arrow keys) ──────────
+  const tabs = [...document.querySelectorAll('.tab-btn')];
+  const selectTab = btn => {
+    tabs.forEach(b => {
+      const on = b === btn;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on);
+      b.tabIndex = on ? 0 : -1;
+      document.getElementById(b.dataset.tab).classList.toggle('active', on);
     });
+  };
+  tabs.forEach((btn, i) => {
+    btn.addEventListener('click', () => selectTab(btn));
+    btn.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+      selectTab(next); next.focus();
+    });
+  });
+
+  // ── Theme toggle (saved per browser) ───────────────────────
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    const root = document.documentElement;
+    const current = root.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    root.dataset.theme = current === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('df-theme', root.dataset.theme); } catch (_) {}
   });
 
   // ── Init JSON tab module ───────────────────────────────────
