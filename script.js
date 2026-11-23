@@ -99,24 +99,56 @@ const FileReaderModule = (() => {
     return best;
   };
 
+  // Decode as UTF-8; fall back to Windows-1252 (Excel "CSV" export) if invalid bytes appear
+  const _decode = async file => {
+    const buf = await file.arrayBuffer();
+    const utf8 = new TextDecoder('utf-8').decode(buf);
+    const text = utf8.includes('�') ? new TextDecoder('windows-1252').decode(buf) : utf8;
+    return text.replace(/^﻿/, '');
+  };
+
+  // Numbers: "19.990" / "1.234.567" = CL thousands, "1.234,56" = CL decimal, "12.5" = plain.
+  // Leading-zero codes ("000123") stay text.
+  const toValue = v => {
+    const s = String(v ?? '').trim();
+    if (s === '') return null;
+    if (/^-?0\d/.test(s)) return s;
+    if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) return Number(s.replace(/\./g, ''));
+    if (/^-?\d{1,3}(\.\d{3})*,\d+$/.test(s)) return Number(s.replace(/\./g, '').replace(',', '.'));
+    if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s);
+    return s;
+  };
+
+  // Header row = first row whose filled cells reach >=50% of the widest row.
+  // Skips report preambles like "Fecha: ,01/04/2026" / ",,,,,,Gastos".
+  const findHeaderRow = rows => {
+    const filled = r => r.filter(c => String(c ?? '').trim() !== '').length;
+    const width = Math.max(...rows.map(filled));
+    return Math.max(0, rows.findIndex(r => filled(r) >= Math.max(2, width * 0.5)));
+  };
+
+  // Turn raw 2D rows into { headers, data } with preamble skipped and unique headers
+  const rowsToDataset = (name, rows) => {
+    const h = findHeaderRow(rows);
+    const width = Math.max(...rows.slice(h).map(r => r.length));
+    const raw = Array.from({ length: width }, (_, i) => rows[h][i] ?? '');
+    // Drop fully-empty trailing columns
+    let last = width - 1;
+    while (last > 0 && !String(raw[last]).trim() && rows.slice(h + 1).every(r => !String(r[last] ?? '').trim())) last--;
+    const headers = DataCleaner.sanitizeHeaders(raw.slice(0, last + 1).map((c, i) => String(c).trim() || `Col_${i + 1}`));
+    const data = rows.slice(h + 1)
+      .filter(r => r.some(c => String(c ?? '').trim() !== ''))
+      .map(r => Object.fromEntries(headers.map((k, i) => [k, toValue(r[i])])));
+    return { name, headers, data };
+  };
+
   // Parse flat text files (CSV, TSV, TXT, pipe-separated, etc.)
-  const _parseText = file => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const text = e.target.result;
-      const delim = detectDelimiter(text);
-      Papa.parse(text, {
-        header: true,
-        skipEmptyLines: 'greedy',
-        dynamicTyping: true,
-        delimiter: delim,
-        complete: res => resolve({ name: file.name, data: res.data, headers: res.meta.fields }),
-        error: err => reject(new Error(`PapaParse [${file.name}]: ${err.message}`))
-      });
-    };
-    reader.onerror = () => reject(new Error(`No se pudo leer el archivo: ${file.name}`));
-    reader.readAsText(file, 'UTF-8');
-  });
+  const _parseText = async file => {
+    const text = await _decode(file);
+    const res = Papa.parse(text, { header: false, skipEmptyLines: 'greedy', delimiter: detectDelimiter(text) });
+    if (!res.data.length) throw new Error(`El archivo "${file.name}" está vacío.`);
+    return rowsToDataset(file.name, res.data);
+  };
 
   // Parse XLSX via ExcelJS (convertidor-csv repo integration)
   const _parseXLSX = async file => {
@@ -127,24 +159,17 @@ const FileReaderModule = (() => {
     if (!ws) throw new Error(`El archivo "${file.name}" no contiene hojas de cálculo.`);
 
     const rows = [];
-    let headers = [];
-
-    ws.eachRow((row, i) => {
-      const vals = row.values.slice(1).map(v => {
+    ws.eachRow({ includeEmpty: false }, row => {
+      rows.push(row.values.slice(1).map(v => {
+        if (v instanceof Date) return v.toLocaleDateString('es-CL');
         if (v && typeof v === 'object' && v.result !== undefined) return v.result;
+        if (v && typeof v === 'object' && v.richText) return v.richText.map(t => t.text).join('');
         if (v && typeof v === 'object' && v.text !== undefined) return v.text;
-        return v ?? null;
-      });
-      if (i === 1) {
-        headers = vals.map(String);
-      } else {
-        const obj = {};
-        headers.forEach((h, idx) => { obj[h] = vals[idx] ?? null; });
-        rows.push(obj);
-      }
+        return v ?? '';
+      }));
     });
-
-    return { name: file.name, data: rows, headers };
+    if (!rows.length) throw new Error(`El archivo "${file.name}" está vacío.`);
+    return rowsToDataset(file.name, rows);
   };
 
   // Public: route by extension
@@ -154,7 +179,7 @@ const FileReaderModule = (() => {
     return _parseText(file);
   };
 
-  return { parse };
+  return { parse, rowsToDataset, toValue };
 })();
 
 
@@ -171,10 +196,13 @@ const DataCleaner = (() => {
     /subtotal/i,
   ];
 
+  // A total row has a short cell that IS a total label (e.g. "Total", "Subtotal:"),
+  // not a long comment that merely mentions "total".
   const _isTrash = row => {
-    if (Object.values(row).every(v => v === null || v === '')) return true;
-    const str = JSON.stringify(Object.values(row)).toLowerCase();
-    return TRASH_PATTERNS.some(p => p.test(str));
+    const vals = Object.values(row);
+    if (vals.every(v => v === null || v === '')) return true;
+    return vals.some(v => typeof v === 'string' && v.length <= 40 &&
+      /^\s*(sub)?total/i.test(v) && TRASH_PATTERNS.some(p => p.test(v)));
   };
 
   // Remove trash rows (totals, blanks, subtotals)
@@ -284,11 +312,15 @@ const ExcelGenerator = (() => {
   const generate = async (ws, rawHeaders, safeHeaders, dataRows, opts) => {
     const { theme, freeze, accounting } = opts;
 
-    const tableRows = dataRows.map(r => rawHeaders.map(h => r[h] ?? ''));
+    // Excel cells max 32767 chars; longer values corrupt the file
+    const tableRows = dataRows.map(r => rawHeaders.map(h => {
+      const v = r[h] ?? '';
+      return typeof v === 'string' && v.length > 32767 ? v.slice(0, 32767) : v;
+    }));
 
     // Build Excel Table with corporate theme
     ws.addTable({
-      name: 'ConsolidadoMaestro',
+      name: `Tabla${ws.id}`,
       ref: 'A1',
       headerRow: true,
       style: { theme, showRowStripes: true, showBandedRows: true },
@@ -435,15 +467,13 @@ const Pipeline = (() => {
       _log('Validando consistencia de estructura de columnas...');
       await _tick();
 
-      const refHeaders = JSON.stringify(datasets[0].headers);
-      const mismatch = datasets.find(d => JSON.stringify(d.headers) !== refHeaders);
-      if (mismatch) {
-        throw new Error(
-          `Estructura incompatible en "${mismatch.name}". ` +
-          `Todos los archivos deben tener exactamente los mismos encabezados.`
-        );
-      }
-      _log(`Estructura validada: ${datasets[0].headers.length} columnas.`, 'ok');
+      // Different structures are merged by column name (union, first-seen order)
+      const rawHeaders = [...new Set(datasets.flatMap(d => d.headers))];
+      datasets.forEach(d => {
+        if (d.headers.length !== rawHeaders.length)
+          _log(`"${d.name}" tiene ${d.headers.length} de ${rawHeaders.length} columnas; las faltantes quedan vacías.`, 'info');
+      });
+      _log(`Estructura validada: ${rawHeaders.length} columnas.`, 'ok');
       _setProgress(40);
 
       // ── STEP 3: CLEAN & SORT ────────────────────────────────
@@ -451,7 +481,6 @@ const Pipeline = (() => {
       _log('Uniendo, limpiando y ordenando datos...');
       await _tick();
 
-      const rawHeaders = datasets[0].headers;
       let master = datasets.flatMap(d => d.data);
       const rawCount = master.length;
 
@@ -536,177 +565,122 @@ const Pipeline = (() => {
 // ══════════════════════════════════════════════════════════════
 const JsonFlattener = (() => {
 
-  // Flatten a single object recursively into dot-notation keys
-  const _flattenObj = (obj, prefix = '', result = {}) => {
+  const _isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const _isObjArray = v => Array.isArray(v) && v.length > 0 && v.every(_isObj);
+
+  // Cartesian merge of row lists (parent fields repeated on each child row)
+  const _cross = (rows, sub) => rows.flatMap(r => sub.map(s => ({ ...r, ...s })));
+
+  // Flatten one record into 1+ rows with dot-notation keys.
+  // The first nested array of objects per record is exploded into rows (e.g. order → items);
+  // any further ones are kept as JSON text so rows don't multiply out of control.
+  const _expand = (obj, prefix = '', state = { exploded: false }) => {
+    let rows = [{}];
+    const set = (k, v) => rows.forEach(r => { r[k] = v; });
     for (const [k, v] of Object.entries(obj)) {
       const key = prefix ? `${prefix}.${k}` : k;
-      if (v === null || v === undefined) {
-        result[key] = '';
+      if (v === null || v === undefined) set(key, '');
+      else if (_isObjArray(v) && !state.exploded) {
+        state.exploded = true;
+        rows = _cross(rows, v.flatMap(item => _expand(item, key, state)));
       } else if (Array.isArray(v)) {
-        if (v.length === 0) {
-          result[key] = '';
-        } else if (typeof v[0] === 'object' && v[0] !== null) {
-          // Nested array of objects: serialize as JSON string (too complex to expand inline)
-          result[key] = JSON.stringify(v);
-        } else {
-          // Array of primitives: join with pipe
-          result[key] = v.join(' | ');
-        }
-      } else if (typeof v === 'object') {
-        _flattenObj(v, key, result);
-      } else {
-        result[key] = v;
-      }
+        set(key, v.some(x => x !== null && typeof x === 'object') ? JSON.stringify(v) : v.join(' | '));
+      } else if (_isObj(v)) rows = _cross(rows, _expand(v, key, state));
+      else set(key, v);
     }
-    return result;
+    return rows;
   };
 
-  // Find the dominant array in a root object (largest array value)
-  const _extractDominantArray = obj => {
-    let best = null, bestLen = -1;
-    for (const v of Object.values(obj)) {
-      if (Array.isArray(v) && v.length > bestLen) { best = v; bestLen = v.length; }
-    }
-    return best;
-  };
-
-  // Serialize a cell value: if it's an object, extract the most meaningful string field
-  const _serializeCell = v => {
-    if (v === null || v === undefined) return '';
-    if (typeof v !== 'object') return v;
-    if (Array.isArray(v)) return v.join(' | ');
-    // Object cell: prefer common "label" keys, fallback to first string value
-    const labelKeys = ['service_number','name','label','title','text','value','description','code'];
-    for (const k of labelKeys) {
-      if (v[k] !== undefined && v[k] !== null) return String(v[k]);
-    }
-    // Fallback: first string-valued key
-    for (const val of Object.values(v)) {
-      if (typeof val === 'string' && val.trim()) return val;
-    }
-    return JSON.stringify(v);
-  };
-
-  // Deep search for a pair: headerArray + dataBody (array of arrays) anywhere in the object tree
+  // Header array + body (array of arrays) of the same width, as siblings in one object
+  // e.g. { data_header: { main: [...] }, data_body: [[...]] }
   const _findHeaderBodyPair = obj => {
-    if (typeof obj !== 'object' || obj === null) return null;
-
-    // Direct pattern: { data_header: { main: [...] }, data_body: [[...]] }
-    const allKeys = Object.keys(obj);
-    let headerArr = null, bodyArr = null;
-
-    // Search for header array (array of strings)
-    const findHeaderArray = o => {
-      if (Array.isArray(o) && o.length > 0 && typeof o[0] === 'string') return o;
-      if (typeof o === 'object' && o !== null) {
-        for (const v of Object.values(o)) {
-          const r = findHeaderArray(v);
-          if (r) return r;
-        }
+    const stringArrays = [], bodies = [];
+    const walk = o => {
+      if (Array.isArray(o)) {
+        if (o.length && o.every(x => typeof x === 'string')) stringArrays.push(o);
+        else if (o.length && o.every(Array.isArray)) bodies.push(o);
+        return;
       }
-      return null;
+      if (_isObj(o)) Object.values(o).forEach(walk);
     };
-
-    // Search for data body (array of arrays of non-string values)
-    const findBodyArray = o => {
-      if (Array.isArray(o) && o.length > 0 && Array.isArray(o[0])) return o;
-      if (typeof o === 'object' && o !== null) {
-        for (const v of Object.values(o)) {
-          const r = findBodyArray(v);
-          if (r) return r;
-        }
-      }
-      return null;
-    };
-
-    headerArr = findHeaderArray(obj);
-    bodyArr   = findBodyArray(obj);
-
-    if (headerArr && bodyArr) return { headerArr, bodyArr };
+    walk(obj);
+    for (const body of bodies) {
+      const width = Math.max(...body.map(r => r.length));
+      const headerArr = stringArrays.find(h => h.length === width);
+      if (headerArr) return { headerArr, bodyArr: body };
+    }
     return null;
   };
 
+  // Largest array of objects anywhere in the tree (e.g. { status, data: { results: [...] } })
+  const _findRecords = obj => {
+    let best = null;
+    const walk = o => {
+      if (_isObjArray(o)) { if (!best || o.length > best.length) best = o; return; }
+      if (_isObj(o)) Object.values(o).forEach(walk);
+    };
+    walk(obj);
+    return best;
+  };
+
+  // Array → rows
+  const _fromArray = arr => {
+    if (arr.length === 0) throw new Error('El array JSON está vacío.');
+    if (arr.every(Array.isArray)) {
+      const first = arr[0];
+      const hasHeader = first.length && first.every(x => typeof x === 'string');
+      const width = Math.max(...arr.map(r => r.length));
+      const headers = Array.from({ length: width }, (_, i) => hasHeader && first[i] ? String(first[i]) : `Col_${i + 1}`);
+      return (hasHeader ? arr.slice(1) : arr).map(r =>
+        Object.fromEntries(headers.map((h, i) => [h, _cell(r[i])])));
+    }
+    return arr.flatMap(item => _isObj(item) ? _expand(item)
+      : Array.isArray(item) ? [{ value: JSON.stringify(item) }] : [{ value: item ?? '' }]);
+  };
+
+  // Cell inside an array row: objects show their most meaningful label field
+  const _cell = v => {
+    if (v === null || v === undefined) return '';
+    if (typeof v !== 'object') return v;
+    if (Array.isArray(v)) return v.join(' | ');
+    for (const k of ['service_number', 'name', 'label', 'title', 'text', 'value', 'description', 'code'])
+      if (v[k] !== undefined && v[k] !== null) return String(v[k]);
+    return Object.values(v).find(x => typeof x === 'string' && x.trim()) ?? JSON.stringify(v);
+  };
+
+  // Accepts normal JSON or NDJSON / JSON Lines (one object per line)
+  const parse = raw => {
+    const text = raw.replace(/^\uFEFF/, '').trim();
+    try { return JSON.parse(text); } catch (e) {
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      if (lines.length > 1) {
+        try { return lines.map(l => JSON.parse(l.replace(/,$/, ''))); } catch (_) {}
+      }
+      throw e;
+    }
+  };
+
   // Convert any JSON value into { headers, rows } ready for Excel
-  const flatten = (parsed) => {
-    let rows = [];
-
-    // Case 0: header_array + data_body pattern (e.g. API reports with data_header.main + data_body)
-    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+  const flatten = parsed => {
+    let rows;
+    if (Array.isArray(parsed)) rows = _fromArray(parsed);
+    else if (_isObj(parsed)) {
       const pair = _findHeaderBodyPair(parsed);
-      if (pair) {
-        const { headerArr, bodyArr } = pair;
-        rows = bodyArr.map(row =>
-          Object.fromEntries(headerArr.map((h, i) => [h, _serializeCell(row[i])]))
-        );
-        // fall through to header/normalize logic below
-        if (rows.length === 0) throw new Error('No se encontraron filas de datos en el JSON.');
-        const headers = headerArr;
-        const normalized = rows.map(r => {
-          const out = {};
-          headers.forEach(h => { out[h] = r[h] !== undefined ? r[h] : ''; });
-          return out;
-        });
-        return { headers, rows: normalized };
-      }
-    }
-
-    // Case 1: top-level array
-    if (Array.isArray(parsed)) {
-      if (parsed.length === 0) throw new Error('El array JSON está vacío.');
-
-      if (typeof parsed[0] === 'object' && parsed[0] !== null && !Array.isArray(parsed[0])) {
-        // Array of objects → flatten each
-        rows = parsed.map(item => _flattenObj(item));
-      } else if (Array.isArray(parsed[0])) {
-        // Array of arrays → first row = headers
-        const [headerRow, ...dataRows] = parsed;
-        rows = dataRows.map(r => {
-          const obj = {};
-          headerRow.forEach((h, i) => { obj[String(h)] = _serializeCell(r[i]); });
-          return obj;
-        });
-      } else {
-        // Array of primitives → single column "value"
-        rows = parsed.map((v, i) => ({ index: i + 1, value: v }));
-      }
-
-    // Case 2: top-level object
-    } else if (typeof parsed === 'object' && parsed !== null) {
-      const dominant = _extractDominantArray(parsed);
-      if (dominant && dominant.length > 0 && typeof dominant[0] === 'object') {
-        // Has a dominant nested array → use it, merge scalar root keys as extra columns
-        const rootScalars = {};
-        for (const [k, v] of Object.entries(parsed)) {
-          if (!Array.isArray(v) && typeof v !== 'object') rootScalars[k] = v;
-        }
-        rows = dominant.map(item => ({ ...rootScalars, ..._flattenObj(item) }));
-      } else {
-        // Single object → one row
-        rows = [_flattenObj(parsed)];
-      }
-
-    } else {
-      throw new Error('El JSON debe ser un objeto o un array.');
-    }
+      const records = _findRecords(parsed);
+      if (pair && (!records || pair.bodyArr.length >= records.length)) {
+        rows = pair.bodyArr.map(r => Object.fromEntries(pair.headerArr.map((h, i) => [h, _cell(r[i])])));
+      } else if (records) {
+        // Root-level scalars (e.g. empresa, periodo) repeated as columns on every row
+        const rootScalars = Object.fromEntries(Object.entries(parsed).filter(([, v]) => v === null || typeof v !== 'object'));
+        rows = _fromArray(records).map(r => ({ ...rootScalars, ...r }));
+      } else rows = _expand(parsed);
+    } else throw new Error('El JSON debe ser un objeto o un array.');
 
     if (rows.length === 0) throw new Error('No se encontraron filas de datos en el JSON.');
 
-    // Build unified headers (union of all keys, preserving first-seen order)
-    const headerSet = new Map();
-    for (const row of rows) {
-      for (const k of Object.keys(row)) {
-        if (!headerSet.has(k)) headerSet.set(k, true);
-      }
-    }
-    const headers = [...headerSet.keys()];
-
-    // Normalize all rows to have every header
-    const normalized = rows.map(r => {
-      const out = {};
-      headers.forEach(h => { out[h] = r[h] !== undefined ? r[h] : ''; });
-      return out;
-    });
-
+    // Unified headers (union of all keys, first-seen order); missing cells → ''
+    const headers = [...new Set(rows.flatMap(Object.keys))];
+    const normalized = rows.map(r => Object.fromEntries(headers.map(h => [h, r[h] ?? ''])));
     return { headers, rows: normalized };
   };
 
@@ -728,7 +702,7 @@ const JsonFlattener = (() => {
     return typeof parsed;
   };
 
-  return { flatten, describeStructure };
+  return { parse, flatten, describeStructure };
 })();
 
 
@@ -764,7 +738,7 @@ const JsonTab = (() => {
     if (!raw) { ta.className = 'json-textarea'; _parsed = null; _flat = null; return; }
 
     try {
-      _parsed = JSON.parse(raw);
+      _parsed = JsonFlattener.parse(raw);
       _flat   = JsonFlattener.flatten(_parsed);
 
       ta.className = 'json-textarea valid';
@@ -777,7 +751,7 @@ const JsonTab = (() => {
       _renderPreview();
     } catch (e) {
       ta.className = 'json-textarea invalid';
-      _el('jmType').textContent = 'JSON inválido';
+      _el('jmType').textContent = e instanceof SyntaxError ? `JSON inválido: ${e.message}` : e.message;
       _el('jmType').className   = 'jm-val err';
       _parsed = null; _flat = null;
     }
@@ -789,9 +763,10 @@ const JsonTab = (() => {
     const { headers, rows } = _flat;
     const previewRows = rows.slice(0, MAX_PREVIEW_ROWS);
 
-    const thead = `<tr>${headers.map(h => `<th title="${h}">${h}</th>`).join('')}</tr>`;
+    const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const thead = `<tr>${headers.map(h => `<th title="${esc(h)}">${esc(h)}</th>`).join('')}</tr>`;
     const tbody = previewRows.map(r =>
-      `<tr>${headers.map(h => `<td title="${r[h]}">${r[h] === '' ? '<span style="opacity:.3">—</span>' : r[h]}</td>`).join('')}</tr>`
+      `<tr>${headers.map(h => `<td title="${esc(r[h])}">${r[h] === '' ? '<span style="opacity:.3">—</span>' : esc(r[h])}</td>`).join('')}</tr>`
     ).join('');
 
     _el('previewTable').innerHTML = `<thead>${thead}</thead><tbody>${tbody}</tbody>`;
@@ -833,7 +808,7 @@ const JsonTab = (() => {
           try {
             const sub = JsonFlattener.flatten(_parsed[key]);
             const safeH = DataCleaner.sanitizeHeaders(sub.headers);
-            const sheetName = key.slice(0, 31).replace(/[\\\/\?\*\[\]]/g, '_');
+            const sheetName = key.slice(0, 31).replace(/[\\\/\?\*\[\]:]/g, '_') || 'Hoja';
             const ws = wb.addWorksheet(sheetName, {
               properties: { defaultRowHeight: 16 },
               pageSetup: { orientation: 'landscape', fitToPage: true }
@@ -863,6 +838,7 @@ const JsonTab = (() => {
 
     } catch (err) {
       console.error('[DataForge JSON]', err);
+      alert(`No se pudo exportar: ${err.message}`);
       btn.textContent = '✕ ERROR — REINTENTAR';
       btn.disabled = false;
       setTimeout(() => { btn.textContent = '▶ EXPORTAR A EXCEL'; }, 3000);
